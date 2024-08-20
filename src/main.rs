@@ -1,8 +1,8 @@
 use eframe::egui;
 use egui_file::FileDialog;
 use std::path::PathBuf;
-use syn::visit_mut::VisitMut;
-use syn::{parse_file, visit::Visit, File as SynFile, Ident, Pat, PatType, Type};
+use std::process::Command;
+use syn::{parse_file, visit::Visit, File as SynFile, Pat, PatType, Type};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
@@ -19,13 +19,12 @@ fn main() -> Result<(), eframe::Error> {
 #[derive(Default)]
 struct MyApp {
     code: String,
-    old_name: String,
-    new_name: String,
     opened_file: Option<PathBuf>,
     open_file_dialog: Option<FileDialog>,
     variables: Vec<Variable>,
     syntax_set: SyntaxSet,
     theme: Theme,
+    output: String,
 }
 
 impl MyApp {
@@ -47,6 +46,59 @@ impl MyApp {
             self.variables = visitor.variables;
         }
     }
+
+    fn update_code_with_variables(&mut self) {
+        for variable in &self.variables {
+            let search_str = format!("let {}: {} = ", variable.name, variable.var_type);
+            if let Some(pos) = self.code.find(&search_str) {
+                let end_pos = self.code[pos..].find(';').unwrap() + pos + 1;
+                let new_value_str = match variable.var_type.as_str() {
+                    "i32" => format!("{};", variable.value as i32),
+                    "f32" => format!("{};", variable.value as f32),
+                    _ => continue,
+                };
+                self.code
+                    .replace_range(pos + search_str.len()..end_pos, &new_value_str);
+            }
+        }
+    }
+
+    fn run_code(&mut self) {
+        let temp_file_path = "temp_code.rs";
+        if let Err(e) = std::fs::write(temp_file_path, &self.code) {
+            self.output = format!("Failed to write code to file: {}", e);
+            return;
+        }
+
+        let output = Command::new("rustc")
+            .arg(temp_file_path)
+            .arg("-o")
+            .arg("temp_executable")
+            .output();
+
+        match output {
+            Ok(output) => {
+                if !output.stderr.is_empty() {
+                    self.output = format!(
+                        "Compilation error:\n{}",
+                        String::from_utf8_lossy(&output.stderr)
+                    );
+                } else {
+                    match Command::new("./temp_executable").output() {
+                        Ok(run_output) => {
+                            self.output = String::from_utf8_lossy(&run_output.stdout).to_string();
+                        }
+                        Err(e) => {
+                            self.output = format!("Failed to run the code: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                self.output = format!("Failed to compile the code: {}", e);
+            }
+        }
+    }
 }
 
 impl eframe::App for MyApp {
@@ -54,14 +106,12 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Rust Code Editor");
 
-            // Load File Button
             if ui.button("Load File").clicked() {
                 let mut dialog = FileDialog::open_file(self.opened_file.clone());
                 dialog.open();
                 self.open_file_dialog = Some(dialog);
             }
 
-            // Handle File Dialog
             if let Some(dialog) = &mut self.open_file_dialog {
                 if dialog.show(ctx).selected() {
                     if let Some(file) = dialog.path() {
@@ -74,12 +124,15 @@ impl eframe::App for MyApp {
                 }
             }
 
-            // Display current file path
             if let Some(path) = &self.opened_file {
                 ui.label(format!("Current File: {:?}", path.display()));
             }
 
-            // Syntax highlighting for the code
+            if ui.button("Run Code").clicked() {
+                self.update_code_with_variables();
+                self.run_code();
+            }
+
             let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
                 let mut h = HighlightLines::new(
                     self.syntax_set.find_syntax_by_extension("rs").unwrap(),
@@ -107,7 +160,6 @@ impl eframe::App for MyApp {
                 ui.fonts(|f| f.layout_job(job))
             };
 
-            // Code Editor with syntax highlighting
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.code)
@@ -122,7 +174,6 @@ impl eframe::App for MyApp {
 
             ui.separator();
 
-            // Show Variables Panel below the code editor
             ui.vertical(|ui| {
                 if self.variables.is_empty() {
                     ui.label("No variables found.");
@@ -154,6 +205,12 @@ impl eframe::App for MyApp {
                     }
                 }
             });
+
+            ui.separator();
+
+            ui.collapsing("Output", |ui| {
+                ui.label(&self.output);
+            });
         });
     }
 }
@@ -165,7 +222,7 @@ fn parse_rust_code(code: &str) -> Result<SynFile, syn::Error> {
 struct Variable {
     name: String,
     var_type: String,
-    value: f64, // Store value as f64 to allow both i32 and f32 inputs
+    value: f64,
 }
 
 struct VariableVisitor {
@@ -189,7 +246,7 @@ impl<'ast> Visit<'ast> for VariableVisitor {
                 self.variables.push(Variable {
                     name: var_name,
                     var_type,
-                    value: 0.0, // Default value
+                    value: 0.0,
                 });
             }
         }
@@ -207,26 +264,5 @@ fn extract_type(ty: &Type) -> String {
             }
         }
         _ => "Unsupported".to_string(),
-    }
-}
-
-fn rename_variable(ast: &mut SynFile, old_name: &str, new_name: &str) {
-    let mut renamer = Renamer {
-        old_name: Ident::new(old_name, proc_macro2::Span::call_site()),
-        new_name: Ident::new(new_name, proc_macro2::Span::call_site()),
-    };
-    renamer.visit_file_mut(ast);
-}
-
-struct Renamer {
-    old_name: Ident,
-    new_name: Ident,
-}
-
-impl VisitMut for Renamer {
-    fn visit_ident_mut(&mut self, ident: &mut Ident) {
-        if *ident == self.old_name {
-            *ident = self.new_name.clone();
-        }
     }
 }
