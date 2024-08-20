@@ -1,5 +1,6 @@
 use eframe::egui;
-use std::fs;
+use egui_file::FileDialog;
+use std::path::PathBuf;
 use syn::{parse_file, visit_mut::VisitMut, File, Ident};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
@@ -21,6 +22,8 @@ struct MyApp {
     new_name: String,
     syntax_set: SyntaxSet,
     theme: Theme,
+    opened_file: Option<PathBuf>,
+    open_file_dialog: Option<FileDialog>,
 }
 
 impl MyApp {
@@ -40,6 +43,30 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Rust Code Editor");
+
+            // Load File Button
+            if ui.button("Load File").clicked() {
+                let mut dialog = FileDialog::open_file(self.opened_file.clone());
+                dialog.open();
+                self.open_file_dialog = Some(dialog);
+            }
+
+            // Handle File Dialog
+            if let Some(dialog) = &mut self.open_file_dialog {
+                if dialog.show(ctx).selected() {
+                    if let Some(file) = dialog.path() {
+                        self.opened_file = Some(file.to_path_buf());
+                        if let Ok(content) = std::fs::read_to_string(&file) {
+                            self.code = content;
+                        }
+                    }
+                }
+            }
+
+            // Display current file path
+            if let Some(path) = &self.opened_file {
+                ui.label(format!("Current File: {:?}", path.display()));
+            }
 
             // Inputs for renaming variables
             ui.horizontal(|ui| {
