@@ -49,23 +49,29 @@ impl MyApp {
 
     fn update_code_with_variables(&mut self) {
         for variable in &self.variables {
-            let search_str = format!("let {}: {} = ", variable.name, variable.var_type);
+            let search_patterns = vec![
+                format!("let {}: {} = ", variable.name, variable.var_type),
+                format!("let mut {}: {} = ", variable.name, variable.var_type),
+            ];
+
             let mut code_replaced = String::new();
             let mut last_pos = 0;
 
-            while let Some(pos) = self.code[last_pos..].find(&search_str) {
-                let actual_pos = last_pos + pos;
-                let end_pos = self.code[actual_pos..].find(';').unwrap() + actual_pos + 1;
-                let new_value_str = match variable.var_type.as_str() {
-                    "i32" => format!("{};", variable.value as i32),
-                    "i64" => format!("{};", variable.value as i64),
-                    "f32" => format!("{};", variable.value as f32),
-                    "f64" => format!("{};", variable.value as f64),
-                    _ => continue,
-                };
-                code_replaced.push_str(&self.code[last_pos..actual_pos + search_str.len()]);
-                code_replaced.push_str(&new_value_str);
-                last_pos = end_pos;
+            for search_str in search_patterns {
+                while let Some(pos) = self.code[last_pos..].find(&search_str) {
+                    let actual_pos = last_pos + pos;
+                    let end_pos = self.code[actual_pos..].find(';').unwrap() + actual_pos + 1;
+                    let new_value_str = match variable.var_type.as_str() {
+                        "i32" => format!("{};", variable.value as i32),
+                        "i64" => format!("{};", variable.value as i64),
+                        "f32" => format!("{};", variable.value as f32),
+                        "f64" => format!("{};", variable.value as f64),
+                        _ => continue,
+                    };
+                    code_replaced.push_str(&self.code[last_pos..actual_pos + search_str.len()]);
+                    code_replaced.push_str(&new_value_str);
+                    last_pos = end_pos;
+                }
             }
 
             code_replaced.push_str(&self.code[last_pos..]);
@@ -116,11 +122,24 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Rust Code Editor");
 
-            if ui.button("Load File").clicked() {
-                let mut dialog = FileDialog::open_file(self.opened_file.clone());
-                dialog.open();
-                self.open_file_dialog = Some(dialog);
-            }
+            ui.separator();
+
+            // Align "Load File" and "Run Code" buttons on the same line
+            ui.horizontal(|ui| {
+                if ui.button("Load File").clicked() {
+                    let mut dialog = FileDialog::open_file(self.opened_file.clone());
+                    dialog.open();
+                    self.open_file_dialog = Some(dialog);
+                }
+
+                if ui.button("Run Code").clicked() {
+                    self.update_code_with_variables();
+                    self.run_code();
+                }
+            });
+
+            ui.separator();
+            ui.add_space(10.0);
 
             if let Some(dialog) = &mut self.open_file_dialog {
                 if dialog.show(ctx).selected() {
@@ -136,11 +155,6 @@ impl eframe::App for MyApp {
 
             if let Some(path) = &self.opened_file {
                 ui.label(format!("Current File: {:?}", path.display()));
-            }
-
-            if ui.button("Run Code").clicked() {
-                self.update_code_with_variables();
-                self.run_code();
             }
 
             let line_count = self.code.lines().count();
@@ -282,7 +296,12 @@ impl eframe::App for MyApp {
                 .max_height(150.0) // Limit height for scrolling
                 .show(ui, |ui| {
                     ui.collapsing("Output", |ui| {
-                        ui.label(&self.output);
+                        ui.with_layout(
+                            egui::Layout::top_down(egui::Align::Min).with_main_wrap(false),
+                            |ui| {
+                                ui.label(&self.output);
+                            },
+                        );
                     });
                 });
         });
