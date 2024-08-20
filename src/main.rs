@@ -148,25 +148,40 @@ impl eframe::App for MyApp {
                 .map(|i| format!("{}\n", i))
                 .collect::<String>();
 
-            ui.horizontal(|ui| {
-                egui::ScrollArea::vertical()
-                    .id_source("line_numbers_scroll_area")
-                    .max_height(300.0) // Limit height for scrolling
-                    .show(ui, |ui| {
+            // Make the ScrollArea bigger
+            egui::ScrollArea::vertical()
+                .id_source("code_scroll_area")
+                .max_height(800.0) // Increase the height of the scroll area
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let mut line_number_layouter =
+                            |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                                let mut job = egui::text::LayoutJob::default();
+                                job.append(
+                                    string,
+                                    0.0,
+                                    egui::TextFormat {
+                                        font_id: egui::TextStyle::Monospace.resolve(ui.style()),
+                                        color: egui::Color32::GRAY, // Make the line numbers a different color if desired
+                                        line_height: Some(16.0),
+                                        ..Default::default()
+                                    },
+                                );
+                                job.wrap.max_width = wrap_width;
+                                ui.fonts(|f| f.layout_job(job))
+                            };
+
                         ui.add(
                             egui::TextEdit::multiline(&mut line_numbers.clone())
                                 .font(egui::TextStyle::Monospace)
                                 .code_editor()
-                                .desired_width(30.0) // Width for the line numbers column
                                 .lock_focus(true)
-                                .interactive(false), // Line numbers should not be interactive
+                                .interactive(false)
+                                .desired_width(30.0)
+                                .desired_rows(30)
+                                .layouter(&mut line_number_layouter),
                         );
-                    });
 
-                egui::ScrollArea::vertical()
-                    .id_source("code_editor_scroll_area")
-                    .max_height(300.0) // Limit height for scrolling
-                    .show(ui, |ui| {
                         let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
                             let mut h = HighlightLines::new(
                                 self.syntax_set.find_syntax_by_extension("rs").unwrap(),
@@ -199,12 +214,14 @@ impl eframe::App for MyApp {
                                 .font(egui::TextStyle::Monospace)
                                 .code_editor()
                                 .lock_focus(true)
+                                .desired_rows(30) // Set the height by the number of rows
                                 .desired_width(f32::INFINITY)
                                 .layouter(&mut layouter),
                         );
                     });
-            });
+                });
 
+            ui.add_space(10.0); // Add space between code editor and separator
             ui.separator();
 
             egui::ScrollArea::vertical()
