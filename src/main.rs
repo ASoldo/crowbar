@@ -16,6 +16,14 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
+enum VariableValue {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Str(String),
+    Unknown,
+}
+
 #[derive(Default)]
 struct MyApp {
     code: String,
@@ -61,12 +69,12 @@ impl MyApp {
                 while let Some(pos) = self.code[last_pos..].find(&search_str) {
                     let actual_pos = last_pos + pos;
                     let end_pos = self.code[actual_pos..].find(';').unwrap() + actual_pos + 1;
-                    let new_value_str = match variable.var_type.as_str() {
-                        "i32" => format!("{};", variable.value as i32),
-                        "i64" => format!("{};", variable.value as i64),
-                        "f32" => format!("{};", variable.value as f32),
-                        "f64" => format!("{};", variable.value as f64),
-                        _ => continue,
+                    let new_value_str = match &variable.value {
+                        VariableValue::Int(val) => format!("{};", val),
+                        VariableValue::Float(val) => format!("{};", val),
+                        VariableValue::Bool(val) => format!("{};", val),
+                        VariableValue::Str(val) => format!("\"{}\";", val),
+                        VariableValue::Unknown => continue,
                     };
                     code_replaced.push_str(&self.code[last_pos..actual_pos + search_str.len()]);
                     code_replaced.push_str(&new_value_str);
@@ -120,7 +128,7 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Rust Code Editor");
+            ui.heading("Crowbar");
 
             ui.separator();
 
@@ -251,36 +259,28 @@ impl eframe::App for MyApp {
                                     "Variable: {} of type {}",
                                     variable.name, variable.var_type
                                 ));
-                                match variable.var_type.as_str() {
-                                    "i32" => {
+                                match &mut variable.value {
+                                    VariableValue::Int(val) => {
                                         ui.add(
-                                            egui::DragValue::new(&mut variable.value)
+                                            egui::DragValue::new(val)
                                                 .speed(1)
-                                                .clamp_range(i32::MIN..=i32::MAX),
+                                                .clamp_range(i64::MIN..=i64::MAX),
                                         );
                                     }
-                                    "i64" => {
+                                    VariableValue::Float(val) => {
                                         ui.add(
-                                            egui::DragValue::new(&mut variable.value)
-                                                .speed(1)
-                                                .clamp_range(i64::MIN as f64..=i64::MAX as f64),
-                                        );
-                                    }
-                                    "f32" => {
-                                        ui.add(
-                                            egui::DragValue::new(&mut variable.value)
-                                                .speed(0.1)
-                                                .clamp_range(f32::MIN as f64..=f32::MAX as f64),
-                                        );
-                                    }
-                                    "f64" => {
-                                        ui.add(
-                                            egui::DragValue::new(&mut variable.value)
+                                            egui::DragValue::new(val)
                                                 .speed(0.1)
                                                 .clamp_range(f64::MIN..=f64::MAX),
                                         );
                                     }
-                                    _ => {
+                                    VariableValue::Bool(val) => {
+                                        ui.checkbox(val, "Value");
+                                    }
+                                    VariableValue::Str(val) => {
+                                        ui.text_edit_singleline(val);
+                                    }
+                                    VariableValue::Unknown => {
                                         ui.label("Unsupported type for input");
                                     }
                                 }
@@ -315,9 +315,8 @@ fn parse_rust_code(code: &str) -> Result<SynFile, syn::Error> {
 struct Variable {
     name: String,
     var_type: String,
-    value: f64,
+    value: VariableValue,
 }
-
 struct VariableVisitor {
     variables: Vec<Variable>,
 }
@@ -336,10 +335,17 @@ impl<'ast> Visit<'ast> for VariableVisitor {
             if let Pat::Ident(ident) = &**pat {
                 let var_name = ident.ident.to_string();
                 let var_type = extract_type(&**ty);
+                let value = match var_type.as_str() {
+                    "i32" | "i64" => VariableValue::Int(0),
+                    "f32" | "f64" => VariableValue::Float(0.0),
+                    "bool" => VariableValue::Bool(false),
+                    "String" => VariableValue::Str(String::new()),
+                    _ => VariableValue::Unknown,
+                };
                 self.variables.push(Variable {
                     name: var_name,
                     var_type,
-                    value: 0.0,
+                    value,
                 });
             }
         }
