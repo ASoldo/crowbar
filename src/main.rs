@@ -133,34 +133,49 @@ impl eframe::App for MyApp {
                 self.run_code();
             }
 
-            let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-                let mut h = HighlightLines::new(
-                    self.syntax_set.find_syntax_by_extension("rs").unwrap(),
-                    &self.theme,
-                );
-                let ranges: Vec<(syntect::highlighting::Style, &str)> =
-                    h.highlight(string, &self.syntax_set);
-                let mut job = egui::text::LayoutJob::default();
-                for (style, text) in ranges {
-                    let color = egui::Color32::from_rgb(
-                        style.foreground.r,
-                        style.foreground.g,
-                        style.foreground.b,
-                    );
-                    job.append(
-                        text,
-                        0.0,
-                        egui::TextFormat {
-                            color,
-                            ..Default::default()
-                        },
-                    );
-                }
-                job.wrap.max_width = wrap_width;
-                ui.fonts(|f| f.layout_job(job))
-            };
+            let line_count = self.code.lines().count();
+            let line_numbers = (1..=line_count)
+                .map(|i| format!("{}\n", i))
+                .collect::<String>();
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut line_numbers.clone())
+                        .font(egui::TextStyle::Monospace)
+                        .code_editor()
+                        .desired_rows(10)
+                        .desired_width(30.0) // Width for the line numbers column
+                        .lock_focus(true)
+                        .interactive(false), // Line numbers should not be interactive
+                );
+
+                let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                    let mut h = HighlightLines::new(
+                        self.syntax_set.find_syntax_by_extension("rs").unwrap(),
+                        &self.theme,
+                    );
+                    let ranges: Vec<(syntect::highlighting::Style, &str)> =
+                        h.highlight(string, &self.syntax_set);
+                    let mut job = egui::text::LayoutJob::default();
+                    for (style, text) in ranges {
+                        let color = egui::Color32::from_rgb(
+                            style.foreground.r,
+                            style.foreground.g,
+                            style.foreground.b,
+                        );
+                        job.append(
+                            text,
+                            0.0,
+                            egui::TextFormat {
+                                color,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                    job.wrap.max_width = wrap_width;
+                    ui.fonts(|f| f.layout_job(job))
+                };
+
                 ui.add(
                     egui::TextEdit::multiline(&mut self.code)
                         .font(egui::TextStyle::Monospace)
@@ -188,14 +203,28 @@ impl eframe::App for MyApp {
                                 ui.add(
                                     egui::DragValue::new(&mut variable.value)
                                         .speed(1)
-                                        .clamp_range(0..=100),
+                                        .clamp_range(i32::MIN..=i32::MAX),
+                                );
+                            }
+                            "i64" => {
+                                ui.add(
+                                    egui::DragValue::new(&mut variable.value)
+                                        .speed(1)
+                                        .clamp_range(i64::MIN as f64..=i64::MAX as f64),
                                 );
                             }
                             "f32" => {
                                 ui.add(
                                     egui::DragValue::new(&mut variable.value)
                                         .speed(0.1)
-                                        .clamp_range(0.0..=100.0),
+                                        .clamp_range(f32::MIN as f64..=f32::MAX as f64),
+                                );
+                            }
+                            "f64" => {
+                                ui.add(
+                                    egui::DragValue::new(&mut variable.value)
+                                        .speed(0.1)
+                                        .clamp_range(f64::MIN..=f64::MAX),
                                 );
                             }
                             _ => {
