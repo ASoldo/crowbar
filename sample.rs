@@ -1,4 +1,4 @@
 fn main() {
-    let x = 10;
+    let x: i32 = 10;
     println!("Hello, Crowbar! x = {}", x);
 }

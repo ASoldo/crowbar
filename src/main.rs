@@ -1,7 +1,8 @@
 use eframe::egui;
 use egui_file::FileDialog;
 use std::path::PathBuf;
-use syn::{parse_file, visit_mut::VisitMut, File, Ident};
+use syn::visit_mut::VisitMut;
+use syn::{parse_file, visit::Visit, File as SynFile, Ident, Pat, PatType, Type};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Theme, ThemeSet};
 use syntect::parsing::SyntaxSet;
@@ -20,10 +21,11 @@ struct MyApp {
     code: String,
     old_name: String,
     new_name: String,
-    syntax_set: SyntaxSet,
-    theme: Theme,
     opened_file: Option<PathBuf>,
     open_file_dialog: Option<FileDialog>,
+    variables: Vec<Variable>,
+    syntax_set: SyntaxSet,
+    theme: Theme,
 }
 
 impl MyApp {
@@ -35,6 +37,14 @@ impl MyApp {
             syntax_set,
             theme,
             ..Default::default()
+        }
+    }
+
+    fn parse_variables(&mut self) {
+        if let Ok(ast) = parse_rust_code(&self.code) {
+            let mut visitor = VariableVisitor::new();
+            visitor.visit_file(&ast);
+            self.variables = visitor.variables;
         }
     }
 }
@@ -58,6 +68,7 @@ impl eframe::App for MyApp {
                         self.opened_file = Some(file.to_path_buf());
                         if let Ok(content) = std::fs::read_to_string(&file) {
                             self.code = content;
+                            self.parse_variables();
                         }
                     }
                 }
@@ -66,23 +77,6 @@ impl eframe::App for MyApp {
             // Display current file path
             if let Some(path) = &self.opened_file {
                 ui.label(format!("Current File: {:?}", path.display()));
-            }
-
-            // Inputs for renaming variables
-            ui.horizontal(|ui| {
-                ui.label("Old Name:");
-                ui.text_edit_singleline(&mut self.old_name);
-                ui.label("New Name:");
-                ui.text_edit_singleline(&mut self.new_name);
-            });
-
-            if ui.button("Rename Variable").clicked() {
-                if let Ok(mut ast) = parse_rust_code(&self.code) {
-                    rename_variable(&mut ast, &self.old_name, &self.new_name);
-                    self.code = prettyplease::unparse(&ast);
-                } else {
-                    ui.label("Failed to parse code.");
-                }
             }
 
             // Syntax highlighting for the code
@@ -117,24 +111,106 @@ impl eframe::App for MyApp {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.code)
-                        .font(egui::TextStyle::Monospace) // for cursor height
+                        .font(egui::TextStyle::Monospace)
                         .code_editor()
                         .desired_rows(10)
                         .lock_focus(true)
                         .desired_width(f32::INFINITY)
-                        .layouter(&mut layouter), // Pass the closure as mutable
+                        .layouter(&mut layouter),
                 );
+            });
+
+            ui.separator();
+
+            // Show Variables Panel below the code editor
+            ui.vertical(|ui| {
+                if self.variables.is_empty() {
+                    ui.label("No variables found.");
+                } else {
+                    for variable in &mut self.variables {
+                        ui.label(format!(
+                            "Variable: {} of type {}",
+                            variable.name, variable.var_type
+                        ));
+                        match variable.var_type.as_str() {
+                            "i32" => {
+                                ui.add(
+                                    egui::DragValue::new(&mut variable.value)
+                                        .speed(1)
+                                        .clamp_range(0..=100),
+                                );
+                            }
+                            "f32" => {
+                                ui.add(
+                                    egui::DragValue::new(&mut variable.value)
+                                        .speed(0.1)
+                                        .clamp_range(0.0..=100.0),
+                                );
+                            }
+                            _ => {
+                                ui.label("Unsupported type for input");
+                            }
+                        }
+                    }
+                }
             });
         });
     }
 }
 
-fn parse_rust_code(code: &str) -> Result<File, syn::Error> {
+fn parse_rust_code(code: &str) -> Result<SynFile, syn::Error> {
     parse_file(code)
 }
 
-// Function to rename a variable within the AST
-fn rename_variable(ast: &mut File, old_name: &str, new_name: &str) {
+struct Variable {
+    name: String,
+    var_type: String,
+    value: f64, // Store value as f64 to allow both i32 and f32 inputs
+}
+
+struct VariableVisitor {
+    variables: Vec<Variable>,
+}
+
+impl VariableVisitor {
+    fn new() -> Self {
+        Self {
+            variables: Vec::new(),
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for VariableVisitor {
+    fn visit_local(&mut self, local: &'ast syn::Local) {
+        if let Pat::Type(PatType { pat, ty, .. }) = &local.pat {
+            if let Pat::Ident(ident) = &**pat {
+                let var_name = ident.ident.to_string();
+                let var_type = extract_type(&**ty);
+                self.variables.push(Variable {
+                    name: var_name,
+                    var_type,
+                    value: 0.0, // Default value
+                });
+            }
+        }
+        syn::visit::visit_local(self, local);
+    }
+}
+
+fn extract_type(ty: &Type) -> String {
+    match ty {
+        Type::Path(ref typepath) => {
+            if let Some(ident) = typepath.path.get_ident() {
+                ident.to_string()
+            } else {
+                "Unknown".to_string()
+            }
+        }
+        _ => "Unsupported".to_string(),
+    }
+}
+
+fn rename_variable(ast: &mut SynFile, old_name: &str, new_name: &str) {
     let mut renamer = Renamer {
         old_name: Ident::new(old_name, proc_macro2::Span::call_site()),
         new_name: Ident::new(new_name, proc_macro2::Span::call_site()),
