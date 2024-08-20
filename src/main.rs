@@ -1,34 +1,109 @@
+use eframe::egui;
 use std::fs;
-use syn::{parse_file, visit_mut::VisitMut, Expr, File, Ident};
+use syn::{parse_file, visit_mut::VisitMut, File, Ident};
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Theme, ThemeSet};
+use syntect::parsing::SyntaxSet;
 
-fn main() {
-    // Read a sample Rust source file
-    let code = fs::read_to_string("sample.rs").expect("Failed to read file");
+fn main() -> Result<(), eframe::Error> {
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "Rust Code Editor with AST Manipulation",
+        options,
+        Box::new(|_cc| Ok(Box::new(MyApp::new()))),
+    )
+}
 
-    // Parse the code into an AST
-    match parse_rust_code(&code) {
-        Ok(mut ast) => {
-            println!("Successfully parsed AST!");
+#[derive(Default)]
+struct MyApp {
+    code: String,
+    old_name: String,
+    new_name: String,
+    syntax_set: SyntaxSet,
+    theme: Theme,
+}
 
-            // Rename a variable in the AST
-            let old_name = "x";
-            let new_name = "y";
-            rename_variable(&mut ast, old_name, new_name);
+impl MyApp {
+    fn new() -> Self {
+        let syntax_set = SyntaxSet::load_defaults_newlines();
+        let theme = ThemeSet::load_defaults().themes["base16-ocean.dark"].clone();
 
-            // Pretty print the modified AST
-            print_ast(&ast);
+        Self {
+            syntax_set,
+            theme,
+            ..Default::default()
         }
-        Err(e) => eprintln!("Failed to parse code: {}", e),
+    }
+}
+
+impl eframe::App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Rust Code Editor");
+
+            // Inputs for renaming variables
+            ui.horizontal(|ui| {
+                ui.label("Old Name:");
+                ui.text_edit_singleline(&mut self.old_name);
+                ui.label("New Name:");
+                ui.text_edit_singleline(&mut self.new_name);
+            });
+
+            if ui.button("Rename Variable").clicked() {
+                if let Ok(mut ast) = parse_rust_code(&self.code) {
+                    rename_variable(&mut ast, &self.old_name, &self.new_name);
+                    self.code = prettyplease::unparse(&ast);
+                } else {
+                    ui.label("Failed to parse code.");
+                }
+            }
+
+            // Syntax highlighting for the code
+            let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                let mut h = HighlightLines::new(
+                    self.syntax_set.find_syntax_by_extension("rs").unwrap(),
+                    &self.theme,
+                );
+                let ranges: Vec<(syntect::highlighting::Style, &str)> =
+                    h.highlight(string, &self.syntax_set);
+                let mut job = egui::text::LayoutJob::default();
+                for (style, text) in ranges {
+                    let color = egui::Color32::from_rgb(
+                        style.foreground.r,
+                        style.foreground.g,
+                        style.foreground.b,
+                    );
+                    job.append(
+                        text,
+                        0.0,
+                        egui::TextFormat {
+                            color,
+                            ..Default::default()
+                        },
+                    );
+                }
+                job.wrap.max_width = wrap_width;
+                ui.fonts(|f| f.layout_job(job))
+            };
+
+            // Code Editor with syntax highlighting
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.code)
+                        .font(egui::TextStyle::Monospace) // for cursor height
+                        .code_editor()
+                        .desired_rows(10)
+                        .lock_focus(true)
+                        .desired_width(f32::INFINITY)
+                        .layouter(&mut layouter), // Pass the closure as mutable
+                );
+            });
+        });
     }
 }
 
 fn parse_rust_code(code: &str) -> Result<File, syn::Error> {
     parse_file(code)
-}
-
-fn print_ast(ast: &File) {
-    let formatted_code = prettyplease::unparse(ast);
-    println!("{}", formatted_code);
 }
 
 // Function to rename a variable within the AST
@@ -49,19 +124,6 @@ impl VisitMut for Renamer {
     fn visit_ident_mut(&mut self, ident: &mut Ident) {
         if *ident == self.old_name {
             *ident = self.new_name.clone();
-        }
-    }
-
-    // Override to handle expressions, skipping macro expansions
-    fn visit_expr_mut(&mut self, expr: &mut Expr) {
-        match expr {
-            Expr::Macro(_) => {
-                // If it's a macro, you can choose to skip or handle it
-            }
-            _ => {
-                // For other expressions, proceed with the default behavior
-                syn::visit_mut::visit_expr_mut(self, expr);
-            }
         }
     }
 }
