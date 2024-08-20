@@ -50,16 +50,26 @@ impl MyApp {
     fn update_code_with_variables(&mut self) {
         for variable in &self.variables {
             let search_str = format!("let {}: {} = ", variable.name, variable.var_type);
-            if let Some(pos) = self.code.find(&search_str) {
-                let end_pos = self.code[pos..].find(';').unwrap() + pos + 1;
+            let mut code_replaced = String::new();
+            let mut last_pos = 0;
+
+            while let Some(pos) = self.code[last_pos..].find(&search_str) {
+                let actual_pos = last_pos + pos;
+                let end_pos = self.code[actual_pos..].find(';').unwrap() + actual_pos + 1;
                 let new_value_str = match variable.var_type.as_str() {
                     "i32" => format!("{};", variable.value as i32),
+                    "i64" => format!("{};", variable.value as i64),
                     "f32" => format!("{};", variable.value as f32),
+                    "f64" => format!("{};", variable.value as f64),
                     _ => continue,
                 };
-                self.code
-                    .replace_range(pos + search_str.len()..end_pos, &new_value_str);
+                code_replaced.push_str(&self.code[last_pos..actual_pos + search_str.len()]);
+                code_replaced.push_str(&new_value_str);
+                last_pos = end_pos;
             }
+
+            code_replaced.push_str(&self.code[last_pos..]);
+            self.code = code_replaced;
         }
     }
 
@@ -139,107 +149,125 @@ impl eframe::App for MyApp {
                 .collect::<String>();
 
             ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut line_numbers.clone())
-                        .font(egui::TextStyle::Monospace)
-                        .code_editor()
-                        .desired_rows(10)
-                        .desired_width(30.0) // Width for the line numbers column
-                        .lock_focus(true)
-                        .interactive(false), // Line numbers should not be interactive
-                );
-
-                let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-                    let mut h = HighlightLines::new(
-                        self.syntax_set.find_syntax_by_extension("rs").unwrap(),
-                        &self.theme,
-                    );
-                    let ranges: Vec<(syntect::highlighting::Style, &str)> =
-                        h.highlight(string, &self.syntax_set);
-                    let mut job = egui::text::LayoutJob::default();
-                    for (style, text) in ranges {
-                        let color = egui::Color32::from_rgb(
-                            style.foreground.r,
-                            style.foreground.g,
-                            style.foreground.b,
+                egui::ScrollArea::vertical()
+                    .id_source("line_numbers_scroll_area")
+                    .max_height(300.0) // Limit height for scrolling
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut line_numbers.clone())
+                                .font(egui::TextStyle::Monospace)
+                                .code_editor()
+                                .desired_width(30.0) // Width for the line numbers column
+                                .lock_focus(true)
+                                .interactive(false), // Line numbers should not be interactive
                         );
-                        job.append(
-                            text,
-                            0.0,
-                            egui::TextFormat {
-                                color,
-                                ..Default::default()
-                            },
-                        );
-                    }
-                    job.wrap.max_width = wrap_width;
-                    ui.fonts(|f| f.layout_job(job))
-                };
+                    });
 
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.code)
-                        .font(egui::TextStyle::Monospace)
-                        .code_editor()
-                        .desired_rows(10)
-                        .lock_focus(true)
-                        .desired_width(f32::INFINITY)
-                        .layouter(&mut layouter),
-                );
+                egui::ScrollArea::vertical()
+                    .id_source("code_editor_scroll_area")
+                    .max_height(300.0) // Limit height for scrolling
+                    .show(ui, |ui| {
+                        let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                            let mut h = HighlightLines::new(
+                                self.syntax_set.find_syntax_by_extension("rs").unwrap(),
+                                &self.theme,
+                            );
+                            let ranges: Vec<(syntect::highlighting::Style, &str)> =
+                                h.highlight(string, &self.syntax_set);
+                            let mut job = egui::text::LayoutJob::default();
+                            for (style, text) in ranges {
+                                let color = egui::Color32::from_rgb(
+                                    style.foreground.r,
+                                    style.foreground.g,
+                                    style.foreground.b,
+                                );
+                                job.append(
+                                    text,
+                                    0.0,
+                                    egui::TextFormat {
+                                        color,
+                                        ..Default::default()
+                                    },
+                                );
+                            }
+                            job.wrap.max_width = wrap_width;
+                            ui.fonts(|f| f.layout_job(job))
+                        };
+
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.code)
+                                .font(egui::TextStyle::Monospace)
+                                .code_editor()
+                                .lock_focus(true)
+                                .desired_width(f32::INFINITY)
+                                .layouter(&mut layouter),
+                        );
+                    });
             });
 
             ui.separator();
 
-            ui.vertical(|ui| {
-                if self.variables.is_empty() {
-                    ui.label("No variables found.");
-                } else {
-                    for variable in &mut self.variables {
-                        ui.label(format!(
-                            "Variable: {} of type {}",
-                            variable.name, variable.var_type
-                        ));
-                        match variable.var_type.as_str() {
-                            "i32" => {
-                                ui.add(
-                                    egui::DragValue::new(&mut variable.value)
-                                        .speed(1)
-                                        .clamp_range(i32::MIN..=i32::MAX),
-                                );
-                            }
-                            "i64" => {
-                                ui.add(
-                                    egui::DragValue::new(&mut variable.value)
-                                        .speed(1)
-                                        .clamp_range(i64::MIN as f64..=i64::MAX as f64),
-                                );
-                            }
-                            "f32" => {
-                                ui.add(
-                                    egui::DragValue::new(&mut variable.value)
-                                        .speed(0.1)
-                                        .clamp_range(f32::MIN as f64..=f32::MAX as f64),
-                                );
-                            }
-                            "f64" => {
-                                ui.add(
-                                    egui::DragValue::new(&mut variable.value)
-                                        .speed(0.1)
-                                        .clamp_range(f64::MIN..=f64::MAX),
-                                );
-                            }
-                            _ => {
-                                ui.label("Unsupported type for input");
+            egui::ScrollArea::vertical()
+                .id_source("variables_scroll_area")
+                .max_height(150.0) // Limit height for scrolling
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        if self.variables.is_empty() {
+                            ui.label("No variables found.");
+                        } else {
+                            for variable in &mut self.variables {
+                                ui.label(format!(
+                                    "Variable: {} of type {}",
+                                    variable.name, variable.var_type
+                                ));
+                                match variable.var_type.as_str() {
+                                    "i32" => {
+                                        ui.add(
+                                            egui::DragValue::new(&mut variable.value)
+                                                .speed(1)
+                                                .clamp_range(i32::MIN..=i32::MAX),
+                                        );
+                                    }
+                                    "i64" => {
+                                        ui.add(
+                                            egui::DragValue::new(&mut variable.value)
+                                                .speed(1)
+                                                .clamp_range(i64::MIN as f64..=i64::MAX as f64),
+                                        );
+                                    }
+                                    "f32" => {
+                                        ui.add(
+                                            egui::DragValue::new(&mut variable.value)
+                                                .speed(0.1)
+                                                .clamp_range(f32::MIN as f64..=f32::MAX as f64),
+                                        );
+                                    }
+                                    "f64" => {
+                                        ui.add(
+                                            egui::DragValue::new(&mut variable.value)
+                                                .speed(0.1)
+                                                .clamp_range(f64::MIN..=f64::MAX),
+                                        );
+                                    }
+                                    _ => {
+                                        ui.label("Unsupported type for input");
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            });
+                    });
+                });
 
             ui.separator();
 
-            ui.collapsing("Output", |ui| {
-                ui.label(&self.output);
-            });
+            egui::ScrollArea::vertical()
+                .id_source("output_scroll_area")
+                .max_height(150.0) // Limit height for scrolling
+                .show(ui, |ui| {
+                    ui.collapsing("Output", |ui| {
+                        ui.label(&self.output);
+                    });
+                });
         });
     }
 }
