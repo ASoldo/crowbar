@@ -1,4 +1,6 @@
 # Crowbar Rust Code Editor with AST Manipulation
+![image](https://github.com/user-attachments/assets/0aca50ad-b57f-4924-a874-1e32b192ea17)
+
 
 Crowbar is a lightweight Rust code editor with a built-in Abstract Syntax Tree (AST) manipulation tool. The editor allows you to load, modify, and run Rust code directly within the interface. It also provides real-time feedback on variable values through a visual inspector, making it easier to understand and debug Rust programs.
 
