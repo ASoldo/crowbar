@@ -10,7 +10,7 @@ use syntect::parsing::SyntaxSet;
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions::default();
     eframe::run_native(
-        "Rust Code Editor with AST Manipulation",
+        "Crowbar",
         options,
         Box::new(|_cc| Ok(Box::new(MyApp::new()))),
     )
@@ -73,7 +73,13 @@ impl MyApp {
                         VariableValue::Int(val) => format!("{};", val),
                         VariableValue::Float(val) => format!("{};", val),
                         VariableValue::Bool(val) => format!("{};", val),
-                        VariableValue::Str(val) => format!("\"{}\";", val),
+                        VariableValue::Str(val) => {
+                            if variable.var_type == "String" {
+                                format!("\"{}\".to_string();", val)
+                            } else {
+                                format!("\"{}\";", val)
+                            }
+                        }
                         VariableValue::Unknown => continue,
                     };
                     code_replaced.push_str(&self.code[last_pos..actual_pos + search_str.len()]);
@@ -335,24 +341,77 @@ impl<'ast> Visit<'ast> for VariableVisitor {
             if let Pat::Ident(ident) = &**pat {
                 let var_name = ident.ident.to_string();
                 let var_type = extract_type(&**ty);
+
+                // Initialize value based on type
                 let value = match var_type.as_str() {
                     "i32" | "i64" => VariableValue::Int(0),
                     "f32" | "f64" => VariableValue::Float(0.0),
                     "bool" => VariableValue::Bool(false),
-                    "String" => VariableValue::Str(String::new()),
+                    "&str" | "String" => VariableValue::Str(String::new()), // Handle string slices and Strings
                     _ => VariableValue::Unknown,
                 };
+
+                // Add variable to the list
                 self.variables.push(Variable {
                     name: var_name,
                     var_type,
                     value,
                 });
+
+                // Handle initialization if present
+                // Handle initialization if present
+                if let Some(local_init) = &local.init {
+                    if let Some(variable) = self.variables.last_mut() {
+                        match &*local_init.expr {
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Str(lit_str),
+                                ..
+                            }) => {
+                                variable.value = VariableValue::Str(lit_str.value());
+                            }
+                            syn::Expr::Call(syn::ExprCall { func, args, .. }) => {
+                                if let syn::Expr::Path(ref expr_path) = **func {
+                                    if expr_path.path.is_ident("String::from") {
+                                        if let Some(syn::Expr::Lit(syn::ExprLit {
+                                            lit: syn::Lit::Str(lit_str),
+                                            ..
+                                        })) = args.first()
+                                        {
+                                            variable.value = VariableValue::Str(lit_str.value());
+                                        }
+                                    }
+                                }
+                            }
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Int(lit_int),
+                                ..
+                            }) => {
+                                variable.value =
+                                    VariableValue::Int(lit_int.base10_parse().unwrap_or(0));
+                            }
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Float(lit_float),
+                                ..
+                            }) => {
+                                variable.value =
+                                    VariableValue::Float(lit_float.base10_parse().unwrap_or(0.0));
+                            }
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Bool(lit_bool),
+                                ..
+                            }) => {
+                                variable.value = VariableValue::Bool(lit_bool.value);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             }
         }
+
         syn::visit::visit_local(self, local);
     }
 }
-
 fn extract_type(ty: &Type) -> String {
     match ty {
         Type::Path(ref typepath) => {
@@ -362,6 +421,7 @@ fn extract_type(ty: &Type) -> String {
                 "Unknown".to_string()
             }
         }
+        Type::Reference(_) => "&str".to_string(), // Handle string slices
         _ => "Unsupported".to_string(),
     }
 }
