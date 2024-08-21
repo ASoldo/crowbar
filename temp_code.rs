@@ -5,8 +5,8 @@ struct Person<'a> {
 #[allow(unused_mut)]
 #[allow(unused_variables)]
 fn main() {
-    let mut x: i32 = 71;
-    let y: i64 = 193;
+    let mut x: i32 = 50;
+    let y: i64 = 111;
     let str: &str = "Hello";
     let strr: String = "Wooimbouttamakeanameformyselfere".to_string();
     let boo: bool = false;
@@ -21,5 +21,5 @@ fn main() {
     let person = Person {
         name: strr.as_str(),
     };
-    println!("{:?}", person.name);
+    println!("{}", person.name);
 }

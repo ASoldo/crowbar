@@ -21,5 +21,5 @@ fn main() {
     let person = Person {
         name: strr.as_str(),
     };
-    println!("{:?}", person.name);
+    println!("{}", person.name);
 }
