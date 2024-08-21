@@ -5,10 +5,10 @@ struct Person<'a> {
 #[allow(unused_mut)]
 #[allow(unused_variables)]
 fn main() {
-    let mut x: i32 = 50;
-    let y: i64 = 111;
+    let mut x: i32 = 38;
+    let y: i64 = 108;
     let str: &str = "Hello";
-    let strr: String = "Wooimbouttamakeanameformyselfere".to_string();
+    let strr: String = "Rootster".to_string();
     let boo: bool = false;
     const BO: bool = true;
     println!("Hello, Crowbar! x = {}", x);

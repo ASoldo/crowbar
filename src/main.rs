@@ -133,40 +133,40 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        // Top panel for the header and buttons
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.heading("Crowbar");
-
             ui.separator();
-
-            // Align "Load File" and "Run Code" buttons on the same line
             ui.horizontal(|ui| {
                 if ui.button("Load File").clicked() {
                     let mut dialog = FileDialog::open_file(self.opened_file.clone());
                     dialog.open();
                     self.open_file_dialog = Some(dialog);
                 }
-
                 if ui.button("Run Code").clicked() {
                     self.update_code_with_variables();
                     self.run_code();
                 }
             });
-
-            ui.separator();
+            // ui.separator();
             ui.add_space(10.0);
+        });
 
-            if let Some(dialog) = &mut self.open_file_dialog {
-                if dialog.show(ctx).selected() {
-                    if let Some(file) = dialog.path() {
-                        self.opened_file = Some(file.to_path_buf());
-                        if let Ok(content) = std::fs::read_to_string(&file) {
-                            self.code = content;
-                            self.parse_variables();
-                        }
+        // Handle file dialog outside the main panels to ensure it works
+        if let Some(dialog) = &mut self.open_file_dialog {
+            if dialog.show(ctx).selected() {
+                if let Some(file) = dialog.path() {
+                    self.opened_file = Some(file.to_path_buf());
+                    if let Ok(content) = std::fs::read_to_string(&file) {
+                        self.code = content;
+                        self.parse_variables();
                     }
                 }
             }
+        }
 
+        // Central panel for the code editor and output
+        egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(path) = &self.opened_file {
                 ui.label(format!("Current File: {:?}", path.display()));
             }
@@ -176,10 +176,8 @@ impl eframe::App for MyApp {
                 .map(|i| format!("{}\n", i))
                 .collect::<String>();
 
-            // Make the ScrollArea bigger
             egui::ScrollArea::vertical()
                 .id_source("code_scroll_area")
-                .max_height(800.0) // Increase the height of the scroll area
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let mut line_number_layouter =
@@ -190,7 +188,7 @@ impl eframe::App for MyApp {
                                     0.0,
                                     egui::TextFormat {
                                         font_id: egui::TextStyle::Monospace.resolve(ui.style()),
-                                        color: egui::Color32::GRAY, // Make the line numbers a different color if desired
+                                        color: egui::Color32::GRAY,
                                         line_height: Some(16.0),
                                         ..Default::default()
                                     },
@@ -216,7 +214,7 @@ impl eframe::App for MyApp {
                                 &self.theme,
                             );
                             let ranges: Vec<(syntect::highlighting::Style, &str)> =
-                                h.highlight(string, &self.syntax_set);
+                                h.highlight_line(string, &self.syntax_set).unwrap();
                             let mut job = egui::text::LayoutJob::default();
                             for (style, text) in ranges {
                                 let color = egui::Color32::from_rgb(
@@ -242,21 +240,39 @@ impl eframe::App for MyApp {
                                 .font(egui::TextStyle::Monospace)
                                 .code_editor()
                                 .lock_focus(true)
-                                .desired_rows(30) // Set the height by the number of rows
+                                .desired_rows(30)
                                 .desired_width(f32::INFINITY)
                                 .layouter(&mut layouter),
                         );
                     });
                 });
 
-            ui.add_space(10.0); // Add space between code editor and separator
+            ui.add_space(10.0);
             ui.separator();
 
             egui::ScrollArea::vertical()
-                .id_source("variables_scroll_area")
-                .max_height(150.0) // Limit height for scrolling
+                .id_source("output_scroll_area")
+                .max_height(150.0)
                 .show(ui, |ui| {
-                    ui.vertical(|ui| {
+                    ui.collapsing("Output", |ui| {
+                        ui.with_layout(
+                            egui::Layout::top_down(egui::Align::Min).with_main_wrap(false),
+                            |ui| {
+                                ui.label(&self.output);
+                            },
+                        );
+                    });
+                });
+        });
+
+        // Right panel for the variables inspector
+        egui::SidePanel::right("variables_panel")
+            .resizable(true)
+            .default_width(300.0)
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_source("variables_scroll_area")
+                    .show(ui, |ui| {
                         if self.variables.is_empty() {
                             ui.label("No variables found.");
                         } else {
@@ -270,14 +286,14 @@ impl eframe::App for MyApp {
                                         ui.add(
                                             egui::DragValue::new(val)
                                                 .speed(1)
-                                                .clamp_range(i64::MIN..=i64::MAX),
+                                                .range(i64::MIN..=i64::MAX),
                                         );
                                     }
                                     VariableValue::Float(val) => {
                                         ui.add(
                                             egui::DragValue::new(val)
                                                 .speed(0.1)
-                                                .clamp_range(f64::MIN..=f64::MAX),
+                                                .range(f64::MIN..=f64::MAX),
                                         );
                                     }
                                     VariableValue::Bool(val) => {
@@ -293,24 +309,7 @@ impl eframe::App for MyApp {
                             }
                         }
                     });
-                });
-
-            ui.separator();
-
-            egui::ScrollArea::vertical()
-                .id_source("output_scroll_area")
-                .max_height(150.0) // Limit height for scrolling
-                .show(ui, |ui| {
-                    ui.collapsing("Output", |ui| {
-                        ui.with_layout(
-                            egui::Layout::top_down(egui::Align::Min).with_main_wrap(false),
-                            |ui| {
-                                ui.label(&self.output);
-                            },
-                        );
-                    });
-                });
-        });
+            });
     }
 }
 
@@ -323,6 +322,7 @@ struct Variable {
     var_type: String,
     value: VariableValue,
 }
+
 struct VariableVisitor {
     variables: Vec<Variable>,
 }
@@ -342,24 +342,20 @@ impl<'ast> Visit<'ast> for VariableVisitor {
                 let var_name = ident.ident.to_string();
                 let var_type = extract_type(&**ty);
 
-                // Initialize value based on type
                 let value = match var_type.as_str() {
                     "i32" | "i64" => VariableValue::Int(0),
                     "f32" | "f64" => VariableValue::Float(0.0),
                     "bool" => VariableValue::Bool(false),
-                    "&str" | "String" => VariableValue::Str(String::new()), // Handle string slices and Strings
+                    "&str" | "String" => VariableValue::Str(String::new()),
                     _ => VariableValue::Unknown,
                 };
 
-                // Add variable to the list
                 self.variables.push(Variable {
                     name: var_name,
                     var_type,
                     value,
                 });
 
-                // Handle initialization if present
-                // Handle initialization if present
                 if let Some(local_init) = &local.init {
                     if let Some(variable) = self.variables.last_mut() {
                         match &*local_init.expr {
@@ -412,6 +408,7 @@ impl<'ast> Visit<'ast> for VariableVisitor {
         syn::visit::visit_local(self, local);
     }
 }
+
 fn extract_type(ty: &Type) -> String {
     match ty {
         Type::Path(ref typepath) => {
@@ -421,7 +418,7 @@ fn extract_type(ty: &Type) -> String {
                 "Unknown".to_string()
             }
         }
-        Type::Reference(_) => "&str".to_string(), // Handle string slices
+        Type::Reference(_) => "&str".to_string(),
         _ => "Unsupported".to_string(),
     }
 }
