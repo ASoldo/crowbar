@@ -164,152 +164,165 @@ impl eframe::App for MyApp {
             }
         }
 
-        // Central panel for the code editor and output
+        // Central panel to hold both code editor/output and variables inspector
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(path) = &self.opened_file {
-                ui.label(format!("Current File: {:?}", path.display()));
-            }
+            ui.horizontal(|ui| {
+                // Left side for the code editor and output
+                ui.allocate_ui_with_layout(
+                    egui::Vec2::new(ui.available_width() * 0.7, ui.available_height()),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        if let Some(path) = &self.opened_file {
+                            ui.label(format!("Current File: {:?}", path.display()));
+                        }
 
-            let line_count = self.code.lines().count();
-            let line_numbers = (1..=line_count)
-                .map(|i| format!("{}\n", i))
-                .collect::<String>();
+                        let line_count = self.code.lines().count();
+                        let line_numbers = (1..=line_count)
+                            .map(|i| format!("{}\n", i))
+                            .collect::<String>();
 
-            // Scroll area for the code editor and line numbers
-            egui::ScrollArea::vertical()
-                .id_source("code_scroll_area")
-                .max_height(500.0) // Adjust this as needed to fit your layout
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let mut line_number_layouter =
-                            |ui: &egui::Ui, string: &str, wrap_width: f32| {
-                                let mut job = egui::text::LayoutJob::default();
-                                job.append(
-                                    string,
-                                    0.0,
-                                    egui::TextFormat {
-                                        font_id: egui::TextStyle::Monospace.resolve(ui.style()),
-                                        color: egui::Color32::GRAY,
-                                        line_height: Some(16.0),
-                                        ..Default::default()
-                                    },
-                                );
-                                job.wrap.max_width = wrap_width;
-                                ui.fonts(|f| f.layout_job(job))
-                            };
+                        // Scroll area for the code editor and line numbers
+                        egui::ScrollArea::vertical()
+                            .id_source("code_scroll_area")
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    let mut line_number_layouter =
+                                        |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                                            let mut job = egui::text::LayoutJob::default();
+                                            job.append(
+                                                string,
+                                                0.0,
+                                                egui::TextFormat {
+                                                    font_id: egui::TextStyle::Monospace
+                                                        .resolve(ui.style()),
+                                                    color: egui::Color32::GRAY,
+                                                    line_height: Some(16.0),
+                                                    ..Default::default()
+                                                },
+                                            );
+                                            job.wrap.max_width = wrap_width;
+                                            ui.fonts(|f| f.layout_job(job))
+                                        };
 
-                        ui.add(
-                            egui::TextEdit::multiline(&mut line_numbers.clone())
-                                .font(egui::TextStyle::Monospace)
-                                .code_editor()
-                                .lock_focus(true)
-                                .interactive(false)
-                                .desired_width(30.0)
-                                .layouter(&mut line_number_layouter),
-                        );
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut line_numbers.clone())
+                                            .font(egui::TextStyle::Monospace)
+                                            .code_editor()
+                                            .lock_focus(true)
+                                            .interactive(false)
+                                            .desired_width(30.0)
+                                            .layouter(&mut line_number_layouter),
+                                    );
 
-                        let mut layouter = |ui: &egui::Ui, string: &str, wrap_width: f32| {
-                            let mut h = HighlightLines::new(
-                                self.syntax_set.find_syntax_by_extension("rs").unwrap(),
-                                &self.theme,
-                            );
-                            let ranges: Vec<(syntect::highlighting::Style, &str)> =
-                                h.highlight_line(string, &self.syntax_set).unwrap();
-                            let mut job = egui::text::LayoutJob::default();
-                            for (style, text) in ranges {
-                                let color = egui::Color32::from_rgb(
-                                    style.foreground.r,
-                                    style.foreground.g,
-                                    style.foreground.b,
-                                );
-                                job.append(
-                                    text,
-                                    0.0,
-                                    egui::TextFormat {
-                                        color,
-                                        ..Default::default()
-                                    },
-                                );
-                            }
-                            job.wrap.max_width = wrap_width;
-                            ui.fonts(|f| f.layout_job(job))
-                        };
+                                    let mut layouter =
+                                        |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                                            let mut h = HighlightLines::new(
+                                                self.syntax_set
+                                                    .find_syntax_by_extension("rs")
+                                                    .unwrap(),
+                                                &self.theme,
+                                            );
+                                            let ranges: Vec<(syntect::highlighting::Style, &str)> =
+                                                h.highlight_line(string, &self.syntax_set).unwrap();
+                                            let mut job = egui::text::LayoutJob::default();
+                                            for (style, text) in ranges {
+                                                let color = egui::Color32::from_rgb(
+                                                    style.foreground.r,
+                                                    style.foreground.g,
+                                                    style.foreground.b,
+                                                );
+                                                job.append(
+                                                    text,
+                                                    0.0,
+                                                    egui::TextFormat {
+                                                        color,
+                                                        ..Default::default()
+                                                    },
+                                                );
+                                            }
+                                            job.wrap.max_width = wrap_width;
+                                            ui.fonts(|f| f.layout_job(job))
+                                        };
 
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.code)
-                                .font(egui::TextStyle::Monospace)
-                                .code_editor()
-                                .lock_focus(true)
-                                .desired_width(f32::INFINITY)
-                                .layouter(&mut layouter),
-                        );
-                    });
-                });
+                                    ui.add(
+                                        egui::TextEdit::multiline(&mut self.code)
+                                            .font(egui::TextStyle::Monospace)
+                                            .code_editor()
+                                            .lock_focus(true)
+                                            .desired_width(f32::INFINITY)
+                                            .layouter(&mut layouter),
+                                    );
+                                });
+                            });
 
-            ui.add_space(10.0);
-            ui.separator();
+                        ui.add_space(10.0);
+                        ui.separator();
 
-            // Output section
-            egui::ScrollArea::vertical()
-                .id_source("output_scroll_area")
-                .max_height(150.0)
-                .show(ui, |ui| {
-                    ui.collapsing("Output", |ui| {
-                        ui.with_layout(
-                            egui::Layout::top_down(egui::Align::Min).with_main_wrap(false),
-                            |ui| {
-                                ui.label(&self.output);
-                            },
-                        );
-                    });
-                });
-        });
+                        // Output section
+                        egui::ScrollArea::vertical()
+                            .id_source("output_scroll_area")
+                            .show(ui, |ui| {
+                                ui.collapsing("Output", |ui| {
+                                    ui.with_layout(
+                                        egui::Layout::top_down(egui::Align::Min)
+                                            .with_main_wrap(false),
+                                        |ui| {
+                                            ui.label(&self.output);
+                                        },
+                                    );
+                                });
+                            });
+                    },
+                );
 
-        // Right panel for the variables inspector
-        egui::SidePanel::right("variables_panel")
-            .resizable(true)
-            .default_width(300.0)
-            .show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_source("variables_scroll_area")
-                    .show(ui, |ui| {
-                        if self.variables.is_empty() {
-                            ui.label("No variables found.");
-                        } else {
-                            for variable in &mut self.variables {
-                                ui.label(format!(
-                                    "Variable: {} of type {}",
-                                    variable.name, variable.var_type
-                                ));
-                                match &mut variable.value {
-                                    VariableValue::Int(val) => {
-                                        ui.add(
-                                            egui::DragValue::new(val)
-                                                .speed(1)
-                                                .range(i64::MIN..=i64::MAX),
-                                        );
-                                    }
-                                    VariableValue::Float(val) => {
-                                        ui.add(
-                                            egui::DragValue::new(val)
-                                                .speed(0.1)
-                                                .range(f64::MIN..=f64::MAX),
-                                        );
-                                    }
-                                    VariableValue::Bool(val) => {
-                                        ui.checkbox(val, "Value");
-                                    }
-                                    VariableValue::Str(val) => {
-                                        ui.text_edit_singleline(val);
-                                    }
-                                    VariableValue::Unknown => {
-                                        ui.label("Unsupported type for input");
+                // Right side for the variables inspector
+                ui.allocate_ui_with_layout(
+                    egui::Vec2::new(ui.available_width(), ui.available_height()),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_source("variables_scroll_area")
+                            .show(ui, |ui| {
+                                if self.variables.is_empty() {
+                                    ui.label("No variables found.");
+                                } else {
+                                    for variable in &mut self.variables {
+                                        ui.label(format!(
+                                            "Variable: {} of type {}",
+                                            variable.name, variable.var_type
+                                        ));
+                                        match &mut variable.value {
+                                            VariableValue::Int(val) => {
+                                                ui.add(
+                                                    egui::DragValue::new(val)
+                                                        .speed(1)
+                                                        .range(i64::MIN..=i64::MAX),
+                                                );
+                                            }
+                                            VariableValue::Float(val) => {
+                                                ui.add(
+                                                    egui::DragValue::new(val)
+                                                        .speed(0.1)
+                                                        .range(f64::MIN..=f64::MAX),
+                                                );
+                                            }
+                                            VariableValue::Bool(val) => {
+                                                ui.checkbox(val, "Value");
+                                            }
+                                            VariableValue::Str(val) => {
+                                                ui.text_edit_singleline(val);
+                                            }
+                                            VariableValue::Unknown => {
+                                                ui.label("Unsupported type for input");
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        }
-                    });
+                            });
+                    },
+                );
             });
+        });
     }
 }
 
