@@ -167,9 +167,9 @@ impl eframe::App for MyApp {
         // Central panel to hold both code editor/output and variables inspector
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                // Left side for the code editor and output
+                // Left side for the code editor and output, taking up remaining space
                 ui.allocate_ui_with_layout(
-                    egui::Vec2::new(ui.available_width() * 0.7, ui.available_height()),
+                    egui::Vec2::new(ui.available_width() - 200.0, ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
                         if let Some(path) = &self.opened_file {
@@ -275,9 +275,9 @@ impl eframe::App for MyApp {
                     },
                 );
 
-                // Right side for the variables inspector
+                // Right side for the variables inspector with fixed width of 400
                 ui.allocate_ui_with_layout(
-                    egui::Vec2::new(ui.available_width(), ui.available_height()),
+                    egui::Vec2::new(400.0, ui.available_height()),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
                         egui::ScrollArea::vertical()

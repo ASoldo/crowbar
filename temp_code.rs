@@ -8,7 +8,7 @@ fn main() {
     let mut x: i32 = 0;
     let y: i64 = 0;
     let str: &str = "Hello";
-    let strr: String = "Roots".to_string();
+    let strr: String = "".to_string();
     let boo: bool = false;
     const BO: bool = true;
     println!("Hello, Crowbar! x = {}", x);
