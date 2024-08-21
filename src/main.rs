@@ -148,7 +148,6 @@ impl eframe::App for MyApp {
                     self.run_code();
                 }
             });
-            // ui.separator();
             ui.add_space(10.0);
         });
 
@@ -176,8 +175,10 @@ impl eframe::App for MyApp {
                 .map(|i| format!("{}\n", i))
                 .collect::<String>();
 
+            // Scroll area for the code editor and line numbers
             egui::ScrollArea::vertical()
                 .id_source("code_scroll_area")
+                .max_height(500.0) // Adjust this as needed to fit your layout
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let mut line_number_layouter =
@@ -204,7 +205,6 @@ impl eframe::App for MyApp {
                                 .lock_focus(true)
                                 .interactive(false)
                                 .desired_width(30.0)
-                                .desired_rows(30)
                                 .layouter(&mut line_number_layouter),
                         );
 
@@ -240,7 +240,6 @@ impl eframe::App for MyApp {
                                 .font(egui::TextStyle::Monospace)
                                 .code_editor()
                                 .lock_focus(true)
-                                .desired_rows(30)
                                 .desired_width(f32::INFINITY)
                                 .layouter(&mut layouter),
                         );
@@ -250,6 +249,7 @@ impl eframe::App for MyApp {
             ui.add_space(10.0);
             ui.separator();
 
+            // Output section
             egui::ScrollArea::vertical()
                 .id_source("output_scroll_area")
                 .max_height(150.0)
